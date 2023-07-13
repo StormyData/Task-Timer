@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  build-and-publish:
 
     runs-on: ubuntu-latest
 
@@ -23,7 +23,7 @@ jobs:
       with:
         version: 'latest'
     - name: Build
-      run: trunk build --verbose
+      run: trunk build --release
     - name: Publish
       uses: actions/upload-pages-artifact@v2
       with:
