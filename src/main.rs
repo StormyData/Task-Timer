@@ -73,6 +73,7 @@ struct TaskProps {
     name: String,
     timer: TaskTimer,
     current_time: DateTime<Utc>,
+    on_delete: Callback<()>,
 }
 
 #[function_component(Task)]
@@ -81,10 +82,15 @@ fn task(
         name,
         timer,
         current_time,
+        on_delete,
     }: &TaskProps,
 ) -> Html {
+    let on_delete = on_delete.clone();
     html! {
     <>
+        <span onclick={move |_arg| {on_delete.emit(())}}>
+            <MatButton label="delete" icon="delete" raised=true/>
+        </span>
         <b>{format!("{} {}", name, timer.at(current_time))}</b>
     </>
     }
@@ -95,6 +101,7 @@ struct TaskListProps {
     tasks: Vec<(String, TaskTimer)>,
     select_callback: Callback<ListIndex>,
     current_time: DateTime<Utc>,
+    on_delete: Callback<usize>,
 }
 
 #[function_component(TaskList)]
@@ -103,14 +110,19 @@ fn task_list(
         tasks,
         select_callback,
         current_time,
+        on_delete,
     }: &TaskListProps,
 ) -> Html {
     html! {
         <MatList onaction={select_callback}>
-            { tasks.iter().map(|(name, timer)| {
+            { tasks.iter().enumerate().map(|(index, (name, timer))| {
+                let on_delete = {
+                    let on_delete = on_delete.clone();
+                    Callback::from(move |_arg| {on_delete.emit(index)})
+                };
                 html! {
                     <MatListItem>
-                    <Task name={name.clone()} timer={timer.clone()} current_time={current_time.clone()}/>
+                    <Task name={name.clone()} timer={timer.clone()} current_time={current_time.clone()} on_delete={on_delete}/>
                     </MatListItem>}
             }).collect::<Html>()
             }
@@ -136,7 +148,7 @@ async fn update_current_time(handle: UseStateHandle<DateTime<Utc>>) {
 
 #[function_component(App)]
 fn app() -> Html {
-    let current_time = use_state_eq(|| Utc::now());
+    let current_time = use_state_eq(Utc::now);
     let selected: UseStateHandle<Option<usize>> = use_state_eq(|| None);
     let list = use_state(|| -> Vec<(String, TaskTimer)> { vec![] });
     let on_select = {
@@ -149,7 +161,7 @@ fn app() -> Html {
 
                 if let Some(current) = *selected {
                     let (name, timer) = l.get(current).unwrap();
-                    l[current] = (name.to_owned(), timer.stop(&*current_time));
+                    l[current] = (name.to_owned(), timer.stop(&current_time));
                 }
                 if let Some(new) = i {
                     let (name, timer) = l.get(new).unwrap();
@@ -157,6 +169,20 @@ fn app() -> Html {
                 }
                 list.set(l);
                 selected.set(i);
+            }
+        })
+    };
+    let on_delete = {
+        let list = list.clone();
+        let selected = selected.clone();
+        Callback::from(move |index| {
+            let mut l = (*list).clone();
+            l.remove(index);
+            list.set(l);
+            if let Some(sel) = *selected {
+                if sel == index {
+                    selected.set(None);
+                }
             }
         })
     };
@@ -187,18 +213,23 @@ fn app() -> Html {
             (),
         )
     };
+    let selected_task = (*selected)
+        .and_then(|index| (*list).get(index))
+        .map_or("", |(name, _)| name);
 
     html! {
         <>
             <h1>{ "Time Tracker" }</h1>
-            <b>{*selected}</b>
+            <b>{format!("Selected task: {}", selected_task)}</b>
             <AddTask on_add={add_task}/>
-            <span onclick={on_stop}>
-                <MatButton label="Stop" icon="stop" raised=true/>
-            </span>
-            <TaskList tasks={(*list).clone()} select_callback={on_select} current_time={*current_time}/>
+            <TaskList tasks={(*list).clone()} select_callback={on_select} current_time={*current_time} on_delete={on_delete}/>
             <Timer callback={run_once}/>
             //{run_once.emit(())}
+            if (*selected).is_some() {
+                <span onclick={on_stop}>
+                    <MatButton label="Stop" icon="stop" raised=true/>
+                </span>
+            }
         </>
     }
 }
